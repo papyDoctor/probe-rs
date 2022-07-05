@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fix: Using `restart` request from VSCode now works for both states of `halt_after_rest`.
   - Partial Fix: Set breakpoints and step on RISC-V. Breakpoints work but stepping only works for some breakpoints. This will be addressed in a future PR.
 - Fix nrf9160 target file so it can erase UICR section (#1151)
+  - Partial Fix: Set breakpoints and step on RISCV. Breakpoints work but stepping only works for some breakpoints. This will be addressed in a future PR.
+- Debug: Improve logic for halt locations used by breakpoints and stepping. ( )
 
 ## [0.12.0]
 

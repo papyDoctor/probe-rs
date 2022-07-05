@@ -69,7 +69,11 @@ impl SteppingMode {
         // Sometimes the target program_counter is at a location where the debug_info program row data does not contain valid statements for halt points.
         // When DebugError::NoValidHaltLocation happens, we will step to the next instruction and try again(until we can reasonably expect to have passed out of an epilogue), before giving up.
         for _ in 0..10 {
-            match debug_info.get_halt_locations(program_counter, Some(return_address)) {
+            match super::halt_locations::HaltLocations::new(
+                debug_info,
+                program_counter,
+                Some(return_address),
+            ) {
                 Ok(program_row_data) => {
                     match self {
                         SteppingMode::OverStatement => {

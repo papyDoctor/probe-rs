@@ -12,6 +12,8 @@
 pub mod debug_info;
 /// References to the DIE (debug information entry) of functions.
 pub mod function_die;
+/// Valid halt locations for a program counter. Can be used to identify the next instruction to step to or where breakpoints are valid.
+pub mod halt_locations;
 /// Target Register definitions.
 pub mod registers;
 /// The stack frame information used while unwinding the stack from a specific program counter.
