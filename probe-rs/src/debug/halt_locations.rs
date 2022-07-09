@@ -62,7 +62,7 @@ impl HaltLocations {
         let mut prologue_completed = false;
 
         while let Ok(Some((program_header, row))) = sequence_rows.next_row() {
-            println!("Evaluating program row data @{:#010X}  stmt={:5}  ep={:5}  es={:5}  line={:04}  col={:05}  f={:02}",
+            log::trace!("Evaluating program row data @{:#010X}  stmt={:5}  ep={:5}  es={:5}  line={:04}  col={:05}  f={:02}",
                 row.address(),
                 row.is_stmt(),
                 row.prologue_end(),
@@ -129,12 +129,8 @@ impl HaltLocations {
                 && row.address() > program_counter
             {
                 if row.end_sequence() {
-                    // If the next row is a end of sequence, then we cannot determine valid halt addresses at this program counter.
-                    // TODO: A logical next step would then be to set the next_statement_address to be the same as the step_out_address.
-                    return Err(DebugError::NoValidHaltLocation{
-                            message: "This function does not have any additional halt locations. Please consider using instruction level stepping.".to_string(),
-                            pc_at_error: program_counter,
-                        });
+                    // If the next row is a end of sequence, then we cannot determine valid halt addresses at this program counter. We will assign a value in PART 5.
+                    break;
                 } else if row.is_stmt() {
                     // Use the next available statement.
                     program_row_data.next_statement_address = Some(row.address());
@@ -155,40 +151,69 @@ impl HaltLocations {
         } else {
             // PART 4: This is a safe time to determine the step_out_address.
             if return_address.is_none() {
-                // When setting breakpoints, the call to this function will use None as the return address, because we don't need to calculate the 'step_out' address for breakpoints.
-                // Similarly, if we need to make a recursive call to HaltLocation::new() then that we will use the incoming return_address as a program_counter.
-                // TODO: In those cases, make sure we set an appropriate HaltLocations::step_out_address
+                // This happens because we don't need to calculate the 'step_out' address ...
+                // - When setting breakpoints.
+                // - When processing inlined functions as a recursive call to HaltLocations.new() (See below).
             } else if let Ok(function_dies) =
                 program_unit.get_function_dies(program_counter, None, true)
             {
-                // We want the first qualifying (PC is in range) function from the back of this list.
+                // We want the first qualifying (PC is in range) function from the back of this list, to access the 'inntermost' functions first.
                 for function in function_dies.iter().rev() {
+                    println!(
+                        "Evaluating function {:?}, low_pc={:?}, high_pc={:?}",
+                        function.function_name(),
+                        function.low_pc,
+                        function.high_pc
+                    );
                     if function.low_pc <= program_counter as u64
                         && function.high_pc > program_counter as u64
                     {
                         if function.is_inline() {
                             // Step_out_address for inlined functions, is the first available breakpoint address after the last statement in this function.
-                            program_row_data.step_out_address =
+
+                            if let Some(first_halt_address) =
                                 HaltLocations::new(debug_info, function.high_pc, return_address)?
-                                    .first_halt_address;
+                                    .first_halt_address
+                            {
+                                program_row_data.step_out_address = Some(first_halt_address);
+                            } else {
+                                return Err(DebugError::NoValidHaltLocation{
+                                    message: "Could not determinea valid step-out location. Please consider using instruction level stepping.".to_string(),
+                                    pc_at_error: program_counter,
+                                });
+                            }
                         } else if function.get_attribute(gimli::DW_AT_noreturn).is_some() {
-                            // Cannot step out of non returning functions.
-                            println!(
-                                "Found DW_AT_noreturn option called {:?}",
+                            // This is the only condition that will result in a `None` step_out_address. All other situations will result in a `Some` step_out_address or an Err().
+                            log::debug!(
+                                "Found DW_AT_noreturn option for function {:?}. Cannot step out.",
                                 function.function_name()
                             );
                         } else if program_row_data.step_out_address.is_none() {
                             // Step_out_address for non-inlined functions is the first available breakpoint address after the return address.
-                            program_row_data.step_out_address =
-                                return_address.and_then(|return_address| {
-                                    HaltLocations::new(debug_info, return_address, None).map_or(
-                                        None,
-                                        |valid_halt_locations| {
-                                            valid_halt_locations.first_halt_address
-                                        },
-                                    )
+                            if let Some(return_address) = return_address {
+                                program_row_data.step_out_address =
+                                    HaltLocations::new(debug_info, return_address, None)?
+                                        .first_halt_address;
+                            } else {
+                                return Err(DebugError::NoValidHaltLocation{
+                                    message: "Could not determinea valid step-out location. Please consider using instruction level stepping.".to_string(),
+                                    pc_at_error: program_counter,
                                 });
+                            }
                         }
+                        // We only process the first function that meets this if condition.
+                        break;
+                    }
+                }
+
+                // PART 5: Set the next_halt_address if it is not already set.
+                if program_row_data.next_statement_address.is_none() {
+                    if let Some(step_out_address) = program_row_data.step_out_address {
+                        log::warn!(
+                        "No next statement address found for {:?}. Using the step_out address {:?}.",
+                        program_counter, &step_out_address
+                    );
+                        program_row_data.next_statement_address = Some(step_out_address);
                     }
                 }
             }
