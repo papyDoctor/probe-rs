@@ -159,8 +159,8 @@ impl HaltLocations {
             {
                 // We want the first qualifying (PC is in range) function from the back of this list, to access the 'inntermost' functions first.
                 for function in function_dies.iter().rev() {
-                    println!(
-                        "Evaluating function {:?}, low_pc={:?}, high_pc={:?}",
+                    log::trace!(
+                        "Step Out target: Evaluating function {:?}, low_pc={:?}, high_pc={:?}",
                         function.function_name(),
                         function.low_pc,
                         function.high_pc
